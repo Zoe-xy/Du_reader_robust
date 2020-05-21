@@ -56,7 +56,7 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
 # 创建一个文件的handler
-f_handler = logging.FileHandler("output/train.log");
+f_handler = logging.FileHandler("output_50_2/train_2.log");
 f_handler.setLevel(logging.INFO);
 # 绑定格式
 fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s -   %(message)s");
@@ -135,7 +135,7 @@ class InputFeatures(object):
         self.is_impossible = is_impossible
 
 
-def read_squad_examples(input_file, is_training, version_2_with_negative,da_file=None):
+def read_squad_examples(input_file, da_file,is_training, version_2_with_negative):
     """Read a SQuAD json file into a list of SquadExample."""
     with open(input_file, "r", encoding='utf-8') as reader:
         input_data = json.load(reader)["data"]
@@ -145,16 +145,15 @@ def read_squad_examples(input_file, is_training, version_2_with_negative,da_file
             return True
         return False
 
-    if da_file:
-        # 读取数据增强数据集转为字典
-        with open(da_file, "r", encoding='utf-8') as reader:
-            da_data = json.load(reader)
-        logger.info("read da dataset")
-        syn={}
-        for dict in da_data:
-            syn[dict["qas_id"]]=dict["synonyms"]
-        logger.info(len(syn))
-    # 按1：1比例做数据增强  混合模式
+    # 读取数据增强数据集转为字典
+    with open(da_file, "r", encoding='utf-8') as reader:
+        da_data = json.load(reader)
+    logger.info("read da dataset")
+    syn={}
+    for dict in da_data:
+        syn[dict["qas_id"]]=dict["synonyms"]
+    logger.info(len(syn))
+    # 按0.5比例做数据增强  分阶段
     cnt=0
     num_da=0
     examples = []
@@ -212,20 +211,20 @@ def read_squad_examples(input_file, is_training, version_2_with_negative,da_file
                         start_position = -1
                         end_position = -1
                         orig_answer_text = ""
+                # example = SquadExample(
+                #     qas_id=qas_id,
+                #     question_text=question_text,
+                #     doc_tokens=doc_tokens,
+                #     orig_answer_text=orig_answer_text,
+                #     start_position=start_position,
+                #     end_position=end_position,
+                #     is_impossible=is_impossible)
+                # examples.append(example)
 
-                example = SquadExample(
-                    qas_id=qas_id,
-                    question_text=question_text,
-                    doc_tokens=doc_tokens,
-                    orig_answer_text=orig_answer_text,
-                    start_position=start_position,
-                    end_position=end_position,
-                    is_impossible=is_impossible)
-                examples.append(example)
-                if da_file:
-                    # 1：1比例做数据增强
-                    qas_list = syn[qas_id]
-                    question_text = qas_list[0]
+                # 0.5比例做数据增强 分阶段做数据增强
+                if cnt%2==0:
+                    qas_list=syn[qas_id]
+                    question_text=qas_list[0]
                     example = SquadExample(
                         qas_id=qas_id,
                         question_text=question_text,
@@ -236,9 +235,9 @@ def read_squad_examples(input_file, is_training, version_2_with_negative,da_file
                         is_impossible=is_impossible)
                     examples.append(example)
                     num_da += 1
-                    cnt+=1
+                cnt+=1
 
-        logger.info("sum train example: %d" %cnt)
+        logger.info("sum train_dataset example: %d" %cnt)
         logger.info("augmentation example:%d" %num_da)
     return examples
 
@@ -1165,11 +1164,10 @@ def main():
     if args.do_train:
         train_examples = read_squad_examples(
             input_file=args.train_file, da_file=args.da_file,is_training=True, version_2_with_negative=args.version_2_with_negative)
-        # cache_dir改变文件名
         if args.cache_dir is None:
             cached_train_features_file = args.train_file + '_{0}_{1}_{2}_{3}_{4}'.format(
                 list(filter(None, args.bert_model.split('/'))).pop(), str(args.max_seq_length), str(args.doc_stride),
-                str(args.max_query_length),str(1))
+                str(args.max_query_length),str(2))
         else:
             cached_train_features_file = args.cache_dir.strip('/') + '/' + args.train_file.split('/')[
                 -1] + '_{0}_{1}_{2}_{3}'.format(
